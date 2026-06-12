@@ -46,48 +46,26 @@ import app.template.patches.shared.Constants.CRIMERADAR_COMPATIBILITY
 //    lockedSaveIds=emptySet() so the LiveData streams are never poisoned by
 //    server-returned paywall values.
 //
-//    Original smali body:
-//      const-string v0, "result"
-//      invoke-static {p1, v0}, kotlin/jvm/internal/m;->h(Object;String;)V    # null check
-//      sget-object v0, GlobalLocationRepository;->savedLimit:S
-//      invoke-virtual {p1}, GLocationList;->getLimit()I                       # <- replace
-//      move-result v1
-//      invoke-static {v1}, Integer;->valueOf(I)Integer
-//      move-result-object v1
-//      invoke-virtual {v0, v1}, LiveData;->l(Object)V                         # postValue(limit)
-//      sget-object v0, GlobalLocationRepository;->lockedSaveIds:S
-//      invoke-virtual {p1}, GLocationList;->getLockedSaveIds()Set              # <- replace
-//      move-result-object v1
-//      invoke-virtual {v0, v1}, LiveData;->l(Object)V                         # postValue(ids)
-//      invoke-virtual {p1}, GLocationList;->getList()ArrayList
-//      move-result-object p1
-//      invoke-virtual {p0, p1}, GlobalLocationRepository;->updateSavedList(ArrayList)V
-//      return-void
-//
 //  GlobalLocationRepository.onAccountChanged() (smali_classes7):
 //    Called on every account sign-in/switch and on app start. It resets savedLimit
 //    LiveData to the hardcoded value 1, overriding whatever updateSavedListFull wrote.
 //    THIS IS THE ROOT CAUSE of the "limit 1 survives patch" regression — onAccountChanged()
 //    fires after the initial data load and stomps the corrected limit back to 1.
 //
-//    Original smali body:
-//      sget-object v0, GlobalLocationRepository;->savedList:S
-//      const/4 v1, 0x0
-//      invoke-virtual {v0, v1}, LiveData;->l(Object)V                         # postValue(null)
-//      sget-object v0, GlobalLocationRepository;->savedLimit:S
-//      const/4 v1, 0x1                                                         # <- THE BUG
-//      invoke-static {v1}, Integer;->valueOf(I)Integer
-//      move-result-object v1
-//      invoke-virtual {v0, v1}, LiveData;->l(Object)V                         # postValue(1)
-//      sget-object v0, GlobalLocationRepository;->lockedSaveIds:S
-//      sget-object v1, Ae/E;->b:Ae/E                                          # empty set
-//      invoke-virtual {v0, v1}, LiveData;->l(Object)V                         # postValue(empty)
-//      const-string v0, "mapSaveLocationList"
-//      invoke-static {v0}, Dd/z;->i(String)V
-//      return-void
-//
 //    Patched body: identical except `const/4 v1, 0x1` is replaced with
 //      `const v1, 0x7fffffff` so savedLimit resets to MAX_VALUE, not 1.
+//
+//  --- FIX (VerifyError: 'androidx.lifecycle.S' not instance of 'androidx.lifecycle.M') ---
+//  The fields savedLimit / lockedSaveIds / savedList on GlobalLocationRepository, and the
+//  return type of getSavedList(), are all declared as Landroidx/lifecycle/S; (LiveData,
+//  the superclass). The previous version of this patch invoked postValue()/getValue() as
+//  Landroidx/lifecycle/M;->l(Ljava/lang/Object;)V / Landroidx/lifecycle/M;->d()Ljava/lang/Object;
+//  (MutableLiveData, the subclass) on those S-typed references. Dalvik's verifier rejects
+//  this: a receiver statically typed as a superclass (S) cannot be passed to a method whose
+//  declaring class is a subclass (M). Every such invoke-virtual below now targets
+//  Landroidx/lifecycle/S; to match the actual static type of the receiver, which resolves
+//  the VerifyError on both updateSavedListFull and onAccountChanged (and the analogous bug
+//  in SafetyMapViewModel$saveLocation$1.invokeSuspend).
 
 private const val GATEWAY_CLASS =
     "Lcom/particlemedia/feature/subscription/RadarMapSubscriptionGateway;"
@@ -220,13 +198,13 @@ val bypassPaywallPatch = bytecodePatch(
             const v1, 0x7fffffff
             invoke-static {v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
             move-result-object v1
-            invoke-virtual {v0, v1}, Landroidx/lifecycle/M;->l(Ljava/lang/Object;)V
+            invoke-virtual {v0, v1}, Landroidx/lifecycle/S;->l(Ljava/lang/Object;)V
             sget-object v0, Lcom/particlemedia/feature/map/GlobalLocationRepository;->lockedSaveIds:Landroidx/lifecycle/S;
             invoke-static {}, Ljava/util/Collections;->emptySet()Ljava/util/Set;
             move-result-object v1
-            invoke-virtual {v0, v1}, Landroidx/lifecycle/M;->l(Ljava/lang/Object;)V
+            invoke-virtual {v0, v1}, Landroidx/lifecycle/S;->l(Ljava/lang/Object;)V
             sget-object v0, Lcom/particlemedia/feature/map/GlobalLocationRepository;->savedList:Landroidx/lifecycle/S;
-            invoke-virtual {v0}, Landroidx/lifecycle/M;->d()Ljava/lang/Object;
+            invoke-virtual {v0}, Landroidx/lifecycle/S;->d()Ljava/lang/Object;
             move-result-object v0
             check-cast v0, Ljava/util/ArrayList;
             if-eqz v0, :cond_update_server
@@ -255,15 +233,15 @@ val bypassPaywallPatch = bytecodePatch(
             """
             sget-object v0, Lcom/particlemedia/feature/map/GlobalLocationRepository;->savedList:Landroidx/lifecycle/S;
             const/4 v1, 0x0
-            invoke-virtual {v0, v1}, Landroidx/lifecycle/M;->l(Ljava/lang/Object;)V
+            invoke-virtual {v0, v1}, Landroidx/lifecycle/S;->l(Ljava/lang/Object;)V
             sget-object v0, Lcom/particlemedia/feature/map/GlobalLocationRepository;->savedLimit:Landroidx/lifecycle/S;
             const v1, 0x7fffffff
             invoke-static {v1}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
             move-result-object v1
-            invoke-virtual {v0, v1}, Landroidx/lifecycle/M;->l(Ljava/lang/Object;)V
+            invoke-virtual {v0, v1}, Landroidx/lifecycle/S;->l(Ljava/lang/Object;)V
             sget-object v0, Lcom/particlemedia/feature/map/GlobalLocationRepository;->lockedSaveIds:Landroidx/lifecycle/S;
             sget-object v1, LAe/E;->b:LAe/E;
-            invoke-virtual {v0, v1}, Landroidx/lifecycle/M;->l(Ljava/lang/Object;)V
+            invoke-virtual {v0, v1}, Landroidx/lifecycle/S;->l(Ljava/lang/Object;)V
             const-string v0, "mapSaveLocationList"
             invoke-static {v0}, LDd/z;->i(Ljava/lang/String;)V
             return-void
@@ -295,7 +273,7 @@ val bypassPaywallPatch = bytecodePatch(
             sget-object v0, Lcom/particlemedia/feature/map/GlobalLocationRepository;->INSTANCE:Lcom/particlemedia/feature/map/GlobalLocationRepository;
             invoke-virtual {v0}, Lcom/particlemedia/feature/map/GlobalLocationRepository;->getSavedList()Landroidx/lifecycle/S;
             move-result-object v1
-            invoke-virtual {v1}, Landroidx/lifecycle/M;->d()Ljava/lang/Object;
+            invoke-virtual {v1}, Landroidx/lifecycle/S;->d()Ljava/lang/Object;
             move-result-object v1
             check-cast v1, Ljava/util/ArrayList;
             if-eqz v1, :cond_empty
